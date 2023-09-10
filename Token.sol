@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+
+pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -7,6 +8,14 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 contract MyBSCCoin is IERC20Metadata, Ownable {
     using SafeMath for uint256;
+
+    // using custom errors saves gas 
+    error canNotTranferFromZeroAddress();
+    error canNotTranferToZeroAddress();
+    error canNotApproveFromZeroAddress();
+    error canNotApproveToZeroAddress();
+    error transferAmountExceedsBalance();
+    error notSender();
 
     string private _name = "My BSC Coin";
     string private _symbol = "MBSC";
@@ -29,6 +38,8 @@ contract MyBSCCoin is IERC20Metadata, Ownable {
     address public marketingWallet;
     address public founderWallet;
 
+    // Here in constructor you have to set different address for liquidityWallet, cexWallet, developmentWallet, marketingWallet, founderWallet
+    // this is a major issue
     constructor() {
         uint256 initialSupply = 1_000_000_000 * 10 ** uint256(_decimals); // 1 billion tokens
         _totalSupply = initialSupply;
@@ -40,6 +51,9 @@ contract MyBSCCoin is IERC20Metadata, Ownable {
         marketingWallet = msg.sender;
         founderWallet = msg.sender;
 
+
+        // as every wallet has same address, here _balances[founderWallet] = initialSupply.mul(founderAllocation).div(1000); overrides other assignments.
+        // so you have to set different address for different wallets
         // Distribute tokens to allocation wallets
         _balances[liquidityWallet] = initialSupply.mul(liquidityAllocation).div(1000);
         _balances[cexWallet] = initialSupply.mul(cexAllocation).div(1000);
@@ -88,7 +102,11 @@ contract MyBSCCoin is IERC20Metadata, Ownable {
         return true;
     }
 
+    // this function should be called only by the Sender, if not then anyone can call and take fund from sender to their address
     function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
+        if (msg.sender != sender){
+            revert notSender();
+        }
         _transfer(sender, recipient, amount);
         _approve(sender, msg.sender, _allowances[sender][msg.sender].sub(amount));
         return true;
@@ -105,17 +123,27 @@ contract MyBSCCoin is IERC20Metadata, Ownable {
     }
 
     function _transfer(address sender, address recipient, uint256 amount) internal {
-        require(sender != address(0), "ERC20: transfer from the zero address");
-        require(recipient != address(0), "ERC20: transfer to the zero address");
-        require(_balances[sender] >= amount, "ERC20: transfer amount exceeds balance");
+        if (sender == address(0)){
+            revert canNotTranferFromZeroAddress();
+        }
+        if (recipient == address(0)){
+            revert canNotTranferToZeroAddress();
+        }
+        if (_balances[sender] < amount){
+            revert transferAmountExceedsBalance();
+        }
         _balances[sender] = _balances[sender].sub(amount);
         _balances[recipient] = _balances[recipient].add(amount);
         emit Transfer(sender, recipient, amount);
     }
 
     function _approve(address owner, address spender, uint256 amount) internal {
-        require(owner != address(0), "ERC20: approve from the zero address");
-        require(spender != address(0), "ERC20: approve to the zero address");
+        if (owner == address(0)){
+            revert canNotApproveFromZeroAddress();
+        }
+        if (spender == address(0)){
+            revert canNotApproveToZeroAddress();
+        }
         _allowances[owner][spender] = amount;
         emit Approval(owner, spender, amount);
     }
